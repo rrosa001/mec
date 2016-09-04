@@ -25,10 +25,10 @@
 # Accept parameters from the commandline to set the default variables
 
     param(
-      [string]$vRAurl="MHDES-VRA1P.i.midamerican.com",
-      [string]$IaaS="MHDES-WWVRA1P.i.midamerican.com",
+      [string]$vRAurl="",
+      [string]$IaaS="",
       [string]$Password="",
-      [string]$Version="7.0.1"
+      [string]$Version=""
     )
 
 # ----------------------------------------
@@ -38,10 +38,10 @@
 # If this is unattended then these will be set by the parameters
 # Otherwise you can preset these for run time or simply answer the prompts
 
-# $vRAurl = "{$appliance}"
-# $IaaS = "{$iaas}"
+# $vRAurl = "MHDES-VRA1P.i.midamerican.com"
+# $IaaS = "MHDES-WWVRA1P.i.midamerican.com"
 # $Password = "{$password}"
-# $Version = "7.1"
+# $Version = "7.0.1"
 
 # ----------------------------------------
 # 		END OF USER CONFIGURATION
