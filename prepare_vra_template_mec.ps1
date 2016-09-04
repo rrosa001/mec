@@ -38,10 +38,10 @@
 # If this is unattended then these will be set by the parameters
 # Otherwise you can preset these for run time or simply answer the prompts
 
-# $vRAurl = "MHDES-VRA1P.i.midamerican.com"
-# $IaaS = "MHDES-WWVRA1P.i.midamerican.com"
-# $Password = "{$password}"
-# $Version = "7.0.1"
+  $vRAurl = "MHDES-VRA1P.i.midamerican.com"
+ $IaaS = "MHDES-WWVRA1P.i.midamerican.com"
+ $Password = "{$password}"
+  $Version = "7.0.1"
 
 # ----------------------------------------
 # 		END OF USER CONFIGURATION
