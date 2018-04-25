@@ -1,0 +1,242 @@
+##############################################
+#Variables
+#$vcenter = Read-Host "ustry1vb01vc01.metnet.net"
+#$esxHosts = ##############################################
+#Variables
+#$vcenter = Read-Host "ustry1vb01vc01.metnet.net"
+#$esxHosts = Get-Cluster "On Demand - Do Not Remove from Maintenance Mode" | Get-VMHost | Sort Name
+#$vss= Get-VirtualSwitch -VMHost $vmhost -Name vSwitch0
+#
+#
+##############################################
+
+##Start SSH on host
+
+$esxHosts | Foreach {
+  Start-VMHostService -HostService ($_ | Get-VMHostService | Where { $_.Key -eq "TSM-SSH"} )
+}
+
+#
+#Create vmotion VMkernel
+New-VMHostNetworkAdapter -VirtualSwitch $vss -VMHost $vmhost -VMotionEnabled 1 -PortGroup vblk_esx_vmotion_01 -IP 10.49.3.5 -SubnetMask 255.255.255.0  
+
+#Assign VLAN to vmotion VMkernel
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "vblk_esx_vmotion_01" | Set-VirtualPortGroup -Name "vblk_esx_vmotion_01" -vlanid 1603
+
+#attach vmnic1 to vSwitch0 - Do not modify!
+esxcli network vswitch standard uplink add --uplink-name vmnic1 --vswitch-name vSwitch0
+
+#set hostname and domain
+esxcli system hostname set --host=differentName --domain=metnet.net
+
+#Set Search domain
+esxcli network ip dns search add --domain=metnet.net
+
+#Set ESXi DNS
+esxcli network ip dns server add --server=10.9.167.76 
+esxcli network ip dns server add --server=10.10.61.91
+
+#Set Search domain
+esxcli network ip dns search add --domain=metnet.net
+
+#Rename Portgroup on ESXi Host PowerCLI with VLAN tagged 
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "Management Network" | Set-VirtualPortGroup -Name "vblk_esx_mgmt_01" -vlanid 1602
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "vmotion" | Set-VirtualPortGroup -Name "vblk_esx_vmotion_01" -vlanid 1603
+
+# Configure syslog
+esxcli system syslog config set --default-rotate=20 --default-size=10240 --loghost 10.218.109.24:514,udp://10.218.109.24:514,ssl://10.218.109.24:1514
+esxcli system syslog config logger set --id=hostd --rotate=80 --size=10240
+esxcli system syslog config logger set --id=vmkernel --rotate=80 --size=10240
+esxcli system syslog config logger set --id=fdm --rotate=80
+esxcli system syslog config logger set --id=vpxa --rotate=20 
+esxcli system syslog reload
+
+#Configure Coredump
+esxcli system coredump network set -i 10.49.2.205 -v vmk0 -–enable true
+
+#configure firewall
+esxcli network firewall ruleset set --enabled true -r syslog
+esxcli network firewall ruleset set --enabled true -r ntpClient
+esxcli network firewall ruleset set --enabled true -r sshClient
+esxcli network firewall ruleset set --enabled true -r updateManager
+
+# PowerCLI: Change ESXi Admin Group 
+$esxHosts = "Get-Cluster On Demand - Do Not Remove from Maintenance Mode" | Get-VMHost
+Get-AdvancedSetting -Entity $esxHosts -Name Config.HostAgent.plugins.hostsvc.esxAdminsGroup | Set-AdvancedSetting -Value "CTX_VMware_ESXi_Admin"
+
+# Configure Disk settings (PowerCLI)
+Get-AdvancedSetting -Entity $esxHosts -Name Dsik.UseDeviceReset | Set-AdvancedSetting -value 0 -Confirm:$false
+Get-AdvancedSetting -Entity $esxHosts -Name Net.TcpipHeapSize | Set-AdvancedSetting -value 32 -Confirm:$false
+Get-AdvancedSetting -Entity $esxHosts -Name Net.TcpipHeapMax | Set-AdvancedSetting -value 512 -Confirm:$false
+
+#Configure Disk settings (PowerCLI)
+
+
+
+# Advanced XIO Settings in vSphere
+esxcli system module parameters set -p fnic_max_qdepth=128 -m fnic
+esxcli system settings advanced set --int-value=64 -o /Disk/SchedQuantum
+esxcli system settings advanced set --int-value=4096 -o /Disk/DiskMaxIOSize
+esxcli system settings advanced set --int-value=0256 -o /DataMover/MaxHWTransferSize
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+foreach($esx in $esxHosts){
+ Write-Host "Updating TCP and NFS advanced configuration settings on $esx"
+
+#DISK
+  Set-AdvancedSettings -VMHost $esx -Name Disk.UseDeviceReset -Value 0 -Confirm:$false
+  Get-AdvancedSettings -VMHost $esx -Name Disk.UseDeviceReset 
+
+ # Update TCP settings
+
+  Set-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapSize -Value 32 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapSize
+ 
+  Set-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapMax -Value 512 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapMax 
+
+ # Update NFS settings
+ 
+  Set-AdvancedSettings -VMHost $esx -Name NFS.MaxVolumes -Value 256 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.MaxVolumes
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatFrequency -Value 12 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatFrequency 
+ 
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatTimeout -Value 5 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatTimeout 
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatDelta -Value 5 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatDelta 
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatMaxFailures -Value 10 -Confirm:$false
+  Get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatMaxFailures | Sort Name
+#$vss= Get-VirtualSwitch -VMHost $vmhost -Name vSwitch0
+#
+#
+##############################################
+
+##Start SSH on host
+
+$esxHosts | Foreach {
+  Start-VMHostService -HostService ($_ | Get-VMHostService | Where { $_.Key -eq "TSM-SSH"} )
+}
+
+#
+#Create vmotion VMkernel
+New-VMHostNetworkAdapter -VirtualSwitch $vss -VMHost $vmhost -VMotionEnabled 1 -PortGroup vblk_esx_vmotion_01 -IP 10.49.3.5 -SubnetMask 255.255.255.0  
+
+#Assign VLAN to vmotion VMkernel
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "vblk_esx_vmotion_01" | Set-VirtualPortGroup -Name "vblk_esx_vmotion_01" -vlanid 1603
+
+#attach vmnic1 to vSwitch0 - Do not modify!
+esxcli network vswitch standard uplink add --uplink-name vmnic1 --vswitch-name vSwitch0
+
+#set hostname and domain
+esxcli system hostname set --host=differentName --domain=metnet.net
+
+#Set Search domain
+esxcli network ip dns search add --domain=metnet.net
+
+#Set ESXi DNS
+esxcli network ip dns server add --server=10.9.167.76 
+esxcli network ip dns server add --server=10.10.61.91
+
+#Set Search domain
+esxcli network ip dns search add --domain=metnet.net
+
+#Rename Portgroup on ESXi Host PowerCLI with VLAN tagged 
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "Management Network" | Set-VirtualPortGroup -Name "vblk_esx_mgmt_01" -vlanid 1602
+Get-VMHost -name $vmhost | Get-VirtualPortGroup -Name "vmotion" | Set-VirtualPortGroup -Name "vblk_esx_vmotion_01" -vlanid 1603
+
+# Configure syslog
+esxcli system syslog config set --default-rotate=20 --default-size=10240 --loghost 10.218.109.24:514,udp://10.218.109.24:514,ssl://10.218.109.24:1514
+esxcli system syslog config logger set --id=hostd --rotate=80 --size=10240
+esxcli system syslog config logger set --id=vmkernel --rotate=80 --size=10240
+esxcli system syslog config logger set --id=fdm --rotate=80
+esxcli system syslog config logger set --id=vpxa --rotate=20 
+esxcli system syslog reload
+
+#Configure Coredump
+esxcli system coredump network set -i 10.49.2.205 -v vmk0 -–enable true
+
+#configure firewall
+esxcli network firewall ruleset set --enabled true -r syslog
+esxcli network firewall ruleset set --enabled true -r ntpClient
+esxcli network firewall ruleset set --enabled true -r sshClient
+esxcli network firewall ruleset set --enabled true -r updateManager
+
+# PowerCLI: Change ESXi Admin Group 
+$esxHosts = "Get-Cluster On Demand - Do Not Remove from Maintenance Mode" | Get-VMHost
+Get-AdvancedSetting -Entity $esxHosts -Name Config.HostAgent.plugins.hostsvc.esxAdminsGroup | Set-AdvancedSetting -Value "CTX_VMware_ESXi_Admin"
+
+# Configure Disk settings (PowerCLI)
+Get-AdvancedSetting -Entity $esxHosts -Name Dsik.UseDeviceReset | Set-AdvancedSetting -value 0 -Confirm:$false
+Get-AdvancedSetting -Entity $esxHosts -Name Net.TcpipHeapSize | Set-AdvancedSetting -value 32 -Confirm:$false
+Get-AdvancedSetting -Entity $esxHosts -Name Net.TcpipHeapMax | Set-AdvancedSetting -value 512 -Confirm:$false
+
+#Configure Disk settings (PowerCLI)
+
+
+
+# Advanced XIO Settings in vSphere
+esxcli system module parameters set -p fnic_max_qdepth=128 -m fnic
+esxcli system settings advanced set --int-value=64 -o /Disk/SchedQuantum
+esxcli system settings advanced set --int-value=4096 -o /Disk/DiskMaxIOSize
+esxcli system settings advanced set --int-value=0256 -o /DataMover/MaxHWTransferSize
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------
+foreach($esx in $esxHosts){
+ Write-Host "Updating TCP and NFS advanced configuration settings on $esx"
+
+#DISK
+  Set-AdvancedSettings -VMHost $esx -Name Disk.UseDeviceReset -Value 0 -Confirm:$false
+  Get-AdvancedSettings -VMHost $esx -Name Disk.UseDeviceReset 
+
+ # Update TCP settings
+
+  Set-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapSize -Value 32 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapSize
+ 
+  Set-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapMax -Value 512 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name Net.TcpipHeapMax 
+
+ # Update NFS settings
+ 
+  Set-AdvancedSettings -VMHost $esx -Name NFS.MaxVolumes -Value 256 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.MaxVolumes
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatFrequency -Value 12 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatFrequency 
+ 
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatTimeout -Value 5 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatTimeout 
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatDelta -Value 5 -Confirm:$false
+  get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatDelta 
+
+  Set-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatMaxFailures -Value 10 -Confirm:$false
+  Get-AdvancedSettings -VMHost $esx -Name NFS.HeartbeatMaxFailures 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
