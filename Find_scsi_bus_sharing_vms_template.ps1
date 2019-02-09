@@ -1,3 +1,4 @@
+# chnage "ClusterName" variable to suit your needs
 $array = @()
 
 $vms = get-cluster “ClusterName” | get-vm
